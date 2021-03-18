@@ -1,0 +1,166 @@
+/*
+ * Lab 3.cpp
+ *
+ * Created: 1/31/2020 2:42:43 PM
+ * Author : Nathan Farrar
+ */ 
+
+//** GLOBAL VARIABLES **/
+long freqclk = 16000000; // clock frequency in Hz
+volatile int count_door1 = 0;
+volatile int count_door2 = 0;
+char flag1 = 0;
+char flag2 = 0;
+
+//** FUNCTION DECLARATIONS **//
+void wait(volatile int N);  // Note that variables in the delay loops are declared as volatile.  If not, the compiler will likely
+// see these as not necessary since they are not used for any important tasks or I/O and will eliminate the loops.  In fact, if
+// the simulator is used without these being declared volatile, then the loops will be ignored all together in the simulation,
+// and the cycle counter will not grow correctly.
+void delay_1_msec_raw_count();
+
+
+#include <avr/io.h>
+#include <avr/interrupt.h> // must have this in order to use interrupts
+
+//============================================================
+// MAIN
+//============================================================
+
+int main(void)
+{
+	DDRC = 0b00001111; //Ports C0 through C3 are set as outputs.
+	DDRD = 0b11110011; //All DPorts are set as inputs
+	PORTD = PORTD | 0b00001100; //Setting PORTD2 & PORTD3 to pull-up registers (not needed?)
+	//PORTD = PORTD | (1<<PORTD2 | 1<<PORTD3); alternative method for setting PORTD
+	EICRA = 0b00001010; // Trigger INT1 on falling edge; Trigger INT0 on falling edge
+	EIMSK = 0b00000011; // Enable INT0 and INT1, Alternatively EIMSK = EIMSK | 1<<INT1 | 1<<INT0; 
+	
+	sei(); //Enable Global Interrupt (must include AVR/interrupt.h header file to use this function)
+	
+	int i=1; // resets i to 1 after blinking loop in complete
+	
+//============================================================
+// PROGRAM LOOP BLINKING LIGHT PATTERN
+//============================================================
+  
+    while (1) 
+    {
+		
+			PORTC = PORTC | 0b00001111; // PC0-3 lights reset to off
+			
+			if(i==1) //light 1
+			{
+				PORTC = PORTC & 0b11111110; // turns on light 1
+				wait(250); //1 sec delay
+				i=i+1;
+			}
+			
+			else if(i==2) //light 2
+			{
+				PORTC = PORTC & 0b11111101; // turns on light 2
+				wait(250); //1 sec delay
+				i=i+1;
+			}
+			
+			else if(i==3) //light 3
+			{
+				PORTC = PORTC & 0b11111011; //turns on light 3
+				wait(250); //1 sec delay
+				i=i+1;
+			}
+			
+			else if(i==4)//light 4
+			{
+				PORTC = PORTC & 0b11110111; //turns on light 4
+				wait(250); //1 sec delay
+				i=1; // i reset back to 1 to restart light loop
+			}	
+    }
+
+}
+
+
+//=========================================
+// I N T E R R U P T 0 // binary counter
+//=========================================
+
+ISR(INT0_vect)
+{
+	unsigned char temp; 
+	temp = PORTC;// This example assumes that the ISR is doing something to PORTC,
+	//so we first save current value on PORTC ?? could push this to the Stack
+	
+	for (int count=0; count <= 16; count = count + 1 )
+	{	
+	PORTC = ~count;
+	wait(63); // About 250[ms]
+	}
+	
+	PORTC = temp; //Restore old value to PORTC ?? may first need to pull this from the Stack
+
+	
+	EIFR = EIFR | 1<<INTF0; // Clear the interrupt flag in case it was
+	//reset while in the ISR (so that it doesn't run again)
+}
+
+
+
+//=========================================
+// I N T E R R U P T 1 // all lights on for 2 [s]
+//=========================================
+
+ISR(INT1_vect)
+{
+	unsigned char temp;
+	temp = PORTC;// This example assumes that the ISR is doing something to PORTC,
+	//so we first save current value on PORTC ?? could push this to the Stack
+	
+	PORTC = 0b11110000;	
+	wait(500);
+	PORTC = temp; //Restore old value to PORTC ?? may first need to pull this from the Stack
+	
+	EIFR = EIFR | 1<<INTF1; // Clear the interrupt flag in case it was
+	//reset while in the ISR (so that it doesn't run again)
+}
+
+
+
+//=========================================
+// S U B R O U T I N E S
+//=========================================
+
+void wait(volatile int N) {
+	//*** wait ***
+		
+	/* This subroutine creates a delay of N msec by calling another function.
+			Inputs: N = number of msec for the delay (N is int, so can be up to 65,536 msec)
+			Outputs: None
+			
+		Why is N a volatile variable? Some C compilers try to optimize the code and may eliminate code that appears to do nothing.  A time-killing 
+		loop is is one of those code blocks that could be removed during compile.  Using a nonvolatile variable in the function tells the compiler not 
+		remove it.
+	*/
+	while (N>1) {  // This loop creates an N msec delay
+		N=N-1;
+		delay_1_msec_raw_count();
+	}
+} // end wait()
+
+void delay_1_msec_raw_count() {
+    //*** delay N ms **
+    /* This subroutine creates a delay of N msec by using a raw time-killing count.
+			Inputs: None
+			Outputs: None
+	*/
+	volatile int count = (freqclk/1000-28)/4; // each cycle takes 4 clock cycles, so count is the number of cycles needed to create a 1 msec delay.
+									// 28 is the approximate number of other clock cycles used in the subroutine
+	while (count > 1) {  // This loop is expected to create a 1 msec delay, but it is in fact much longer.  Because of the size of the variables,
+			// there is a lot more that needs to be done each cycle so the loop takes much longer than 1 msec to execute. To know exact time for each 
+			// instruction, use assembly language instead of C. (Or look at the disassembly code file and count instructions.)
+			count--; // decrement count
+	}
+	
+		
+} // end delay_1_msec_raw_count()
+
